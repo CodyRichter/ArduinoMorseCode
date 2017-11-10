@@ -1,27 +1,33 @@
 //
 // Morse Code Transmitter
 //
-// @author Cody R.
+// @author Cody Richter
 // @version 1.0
 //
 
 //Pin Configuration
-int OUTPUT_PIN_MORSE = LED_BUILTIN; //This is the pin # of the pin that will be flashing (LED_BUILTIN for built-in LED on Arduino)
-int OUTPUT_PIN_STATIC = 2; //This is the pin # of the pin that will be either on/off
+int OUTPUT_PIN_MORSE = 2; //This is the pin # of the pin that will be flashing (LED_BUILTIN for built-in LED on Arduino)
+int OUTPUT_PIN_STATIC = 3; //This is the pin # of the pin that will be either on/off
+int INPUT_PIN_SENSOR = 52; //This is the pin # of the input pin that contains the input sensor
+
 
 //User-Controlled Parameters
 int BTI = 200; //(Base Time Interval) This is the # of milliseconds which will be used as the base time unit in morse code
 char wordToTransmit[] = {'i',' ','l','o','v','e',' ','y','o','u'}; //The word to transmit in morse code, inputted as an array of characters in lower case
+int proximityRange = 50; //How close a person must be to the sensor (in inches) for the morse code to activate
 
 //Variable Setup
 int letterReference[26][4]; //Array holding all of the values of morse code for each letter in the alphabet. -1 = no code, 0 = short, 1 = long
 int arraySize; //Size of Word Array
+int sampleWithinRange = 0;
+int sampleTotal = 0;
 
 void setup() {
   Serial.begin(9600);
   
   pinMode (OUTPUT_PIN_MORSE, OUTPUT);
   pinMode (OUTPUT_PIN_STATIC, OUTPUT);
+  pinMode (INPUT_PIN_SENSOR, INPUT);
   
     //Letter a
   letterReference[0][0] = 0;
@@ -158,6 +164,44 @@ void setup() {
   arraySize = sizeof(wordToTransmit)/sizeof(char);
 }
 
+void loop() {
+  long duration, inches;
+  
+  //Distance Sensor Scans Area Ahead Of It
+  pinMode(INPUT_PIN_SENSOR, OUTPUT);
+  digitalWrite(INPUT_PIN_SENSOR, LOW);
+  delayMicroseconds(2);
+  digitalWrite(INPUT_PIN_SENSOR, HIGH);
+  delayMicroseconds(5);
+  digitalWrite(INPUT_PIN_SENSOR, LOW);
+  //Finish Scanning Area Ahead
+
+  //Calculate Distance To Target
+  pinMode(INPUT_PIN_SENSOR, INPUT);
+  duration = pulseIn(INPUT_PIN_SENSOR, HIGH);
+  inches = microsecondsToInches(duration);
+  //Finish Calculating Distance to Target
+
+  if (inches < proximityRange)
+  { 
+  Serial.print(inches);
+  sampleWithinRange++; Serial.println(" Sample: TRUE");}
+  else
+  { 
+  Serial.print(inches); 
+  Serial.println(" Sample: FALSE");}
+  sampleTotal++;
+  if (sampleTotal >= 8)
+  {
+    if (sampleWithinRange >= (3*sampleTotal)/4)
+    {transmitMorseWord(wordToTransmit); Serial.println("[CYCLE COMPLETE] Starting Morse Code");}
+    else
+    {Serial.println("[CYCLE COMPLETE] NOT Starting Morse Code");}
+    sampleTotal = 0;
+    sampleWithinRange = 0;
+  }
+}
+
 void transmitMorseChar(char charToTransmit)
 {
   int positionInArray = ((int)charToTransmit)-97;
@@ -170,12 +214,14 @@ void transmitMorseChar(char charToTransmit)
   for (int i = 0; i < 4; i++) {
       if (letterReference[positionInArray][i] == -1)
       {break;}
-      digitalWrite(OUTPUT_PIN_MORSE,HIGH);
+      //digitalWrite(OUTPUT_PIN_MORSE,HIGH);
+      analogWrite(OUTPUT_PIN_MORSE,255);
       if (letterReference[positionInArray][i] == 0) //Delay For Short Period Of Time
       {delay(BTI);}
       else if (letterReference[positionInArray][i] == 1)//Delay For Long Period Of Time
       {delay(BTI*3);}
-      digitalWrite(OUTPUT_PIN_MORSE,LOW);
+      //digitalWrite(OUTPUT_PIN_MORSE,LOW);
+      analogWrite(OUTPUT_PIN_MORSE,0);
 
       //Delays For 1 Tick Between Parts Of Letter
       if (i < 3) delay(BTI);
@@ -191,6 +237,12 @@ void transmitMorseWord(char wordToTransmit[]) {
     transmitMorseChar(wordToTransmit[i]);
   }
 }
-void loop() {
-  transmitMorseWord(wordToTransmit);
+
+long microsecondsToInches(long microseconds) {
+  // According to Parallax's datasheet for the PING))), there are 73.746
+  // microseconds per inch (i.e. sound travels at 1130 feet per second).
+  // This gives the distance travelled by the ping, outbound and return,
+  // so we divide by 2 to get the distance of the obstacle.
+  // See: http://www.parallax.com/dl/docs/prod/acc/28015-PING-v1.3.pdf
+  return microseconds / 74 / 2;
 }
